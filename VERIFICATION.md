@@ -1,0 +1,79 @@
+# Verification — October 3, 2026
+
+Input: OpenIAP `f8926acba6145862382e3bbbe63f0a6694a92645`, Client Protocol 0.2.0, public conformance suite 4.0.0, Amazon SDK 3.0.9. OpenIAP PR #504 remains unmerged; these native contracts were built into a local Maven repository, not downloaded as an already released contract.
+
+## Automated checks
+
+| Check                           | Observed result                                                                                            |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Provider debug unit tests       | 67 tests: 65 passed, 2 optional-capability skips, 0 failures or errors                                     |
+| Invalid platform requests       | Apple-only purchase and subscription requests emit one developer error and return no purchase             |
+| Public Android provider profile | All 16 required behaviors passed; complete and conformant                                                  |
+| Undeclared capabilities         | Offer-code redemption and subscription billing issue reported not applicable                               |
+| Manifest discovery              | Public `OpenIapProvider` discovers this repository's factory and provider                                  |
+| Release lint                    | No errors; a dependency-update warning for Robolectric                                                     |
+| Expo consumer                   | 172 consumer tests passed; typecheck passed; debug device runtime and optimized release APK build passed     |
+| Optimized consumer              | R8 minification passed; factory class name retained in the mapping                                         |
+| Runtime dependency graph        | Public core + this provider + Amazon SDK; no official OpenIAP store provider, Play Billing, or Horizon SDK |
+
+The [committed conformance report](reports/amazon-example.json) comes from the real provider with controlled Amazon SDK transport. It is not a hardware report. The unit suite also exercises the extracted Amazon product, offer, price, receipt, subscription, and verification-parameter regressions.
+
+## Physical Fire tablet — App Tester simulation
+
+A root agent drove the independently installed Expo app (`dev.openiap.provider.fireos.example`) on a Fire tablet (KFRASWI). No device work was delegated.
+
+| Case                        | Observed result                                                                                                                                                                   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cold startup                | Amazon listener registered before the first Activity resume                                                                                                                       |
+| Connection and catalog      | `amazon-example` connected; consumable title and `$0.99` price loaded; storefront `US`                                                                                            |
+| Purchase and ownership      | Real Amazon SDK/App Tester checkout produced `unknown` + `amazon-example`; ownership read retained that identity                                                                  |
+| Verification and completion | Local dev IAPKit called Amazon RVS sandbox; result was valid, `Sandbox`, `ready-to-consume`, correct SKU, and preserved `amazon-example`; completion removed the owned consumable |
+| Cancellation                | Checkout returned canonical `purchase-error`; ownership remained empty                                                                                                            |
+| Deferred checkout           | Request Purchase returned `deferred-payment`; ownership remained empty before approval                                                                                            |
+| Deferred recovery           | App Tester approval made the purchase available; restore, verification, and completion succeeded                                                                                  |
+
+The dev backend gained one valid Amazon sandbox purchase row for each completed checkout. It stores the underlying `amazon` identity; the client-facing adapter preserves `amazon-example`. The existing dev project uses application id `dev.hyo.martie` for RVS sandbox data. This run does not establish production application-identity binding for the example package.
+
+## Official example comparison — new Router consumer
+
+The consumer copies the official Expo example at the pinned input above. It imports the packed public `expo-iap` package and selects the separate Maven provider. [The provenance manifest](example/upstream-example.json) lists copied files and adaptations; CI runs both the inherited example tests and added boundary tests.
+
+| Screen or check                  | Observed result                                                                                                                                                                                                                                                                           |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| All Products                     | Three in-app products and two subscriptions loaded from App Tester.                                                                                                                                                                                                                       |
+| Purchase Flow                    | The copied screen completed a consumable after explicit Amazon RVS Sandbox verification.                                                                                                                                                                                                  |
+| Provider Acceptance              | All six checks passed: connection, catalog, custom identity, original callback/restore receipt continuity, valid Sandbox verification and consumable completion. The completed consumable was absent on the follow-up ownership read.                                                     |
+| Subscription Flow                | Fresh monthly and yearly App Tester purchases each passed their first RVS Sandbox verification as valid/`entitled` and finished without restore or remount. The original rejection was caused by comparing the term SKU with RVS's base SKU; the catalog mapping now supplies the expected base SKU. |
+| Available Purchases              | Owned subscription and active status were readable; the completed consumable was absent. Store-reported activity is labeled separately from server verification.                                                                                                                          |
+| Offer Code / Alternative Billing | Explicit unsupported-capability states; no Google Play flow, billing controls or indefinite product loading.                                                                                                                                                                              |
+| Compact tutorial                 | Numbered layer buttons opened and closed the source guide on the physical Fire tablet.                                                                                                                                                                                                    |
+| Wide tutorial                    | The same Fire tablet, with temporary density 160, displayed the side explanation at 800 logical pixels. Selecting Public core changed the explanation without a modal; original physical density 213 was restored.                                                                        |
+| Verification boundaries          | Consumer tests reject changed storeId, frozen store, SKU, environment, state and invalid responses; pending and unrelated callbacks cannot finish. The official Skip selector cannot bypass community verification.                                                                       |
+
+The optimized app bundled the copied Router screens and tutorial successfully with R8; the factory class name remains retained. The debug device run used the same consumer source. [Committed screenshots](docs/screenshots/) contain no receipt identifiers or credentials. New October 3 logs and captures remain local.
+
+## Subscription diagnosis and lifecycle gate
+
+The historical requests used the same receipt: `dev.hyo.martie.premium` was rejected as `inauthentic`, whereas `dev.hyo.martie.premium.base` was accepted as `entitled`. A fresh receipt reproduced the same paired result. Amazon returned the base SKU in both cases; the backend retained its valid store verdict independently of the caller's expected-product check. This was a consumer mapping error, not an unexplained RVS outage.
+
+The adapter now takes the base/parent mapping from `amazon.sdktester.json`. Monthly and yearly first-purchase verification passed on the physical Fire after this fix, before any restore. Tests also reject an unrelated base SKU. The subscription and ownership screens no longer present the SDK's auto-renew hint as server renewal status.
+
+| Lifecycle case | October 3 observation | Gate |
+| --- | --- | --- |
+| Fresh monthly subscription | Valid Sandbox verification, finish, and owned subscription | Passed in App Tester |
+| Fresh yearly subscription | Valid Sandbox verification and finish; App Tester term checked separately | Passed in App Tester |
+| App Tester subscription cancellation | Canceled transaction removed from SDK ownership; the same receipt remained valid/`entitled` in RVS Sandbox with no cancellation date | Local cancellation observed; server revocation not established |
+| Accelerated renewal | Martie LAT Test 2 version 91 in progress with accelerated monthly/yearly timelines | Not executed |
+| Cancellation before expiry | No production RVS cancellation/remaining-access sequence observed | Not executed |
+| Expiry and access revocation | No production RVS expiry/revoked-access sequence observed | Not executed |
+| LAT install and application identity | Existing Martie Test 2 version 91 in progress; device-matched self-tester invitation Delivered | Awaiting Appstore installation |
+
+App Tester's auto-renew, free-trial, and grace-period settings were off and were left unchanged. Its RVS Sandbox behavior did not establish production cancellation or expiry. No renewal is inferred from a sandbox `renewalDate` changing during verification. Amazon's [RVS Cloud Sandbox](https://developer.amazon.com/docs/in-app-purchasing/rvs-cloud-sandbox.html) does not cover every production scenario; [accelerated LAT subscriptions](https://developer.amazon.com/docs/app-testing/accelerated-subscriptions-introduction.html) are the remaining device gate.
+
+## Limits
+
+App Tester simulates checkout. The Martie LAT candidate is available to its tester, but has not been installed from the Appstore or tested. No production checkout, deployment, or full subscription lifecycle is claimed. The LAT environment switch has automated coverage, but that is not a LAT purchase. R8 was verified by building and inspecting an optimized consumer; the purchase run used a debug app, as App Tester requires.
+
+This provider adapts the existing OpenIAP Amazon implementation. Its separate artifact and public SDK integration validate the extension boundary; they do not constitute a second independently designed implementation or prove that every protocol design choice is correct.
+
+Reproduce with the commands in [README.md](README.md). CI checks compile and controlled behavior; hardware evidence above was collected locally. Private logs, receipt ids, account ids, keys, and build outputs are excluded from Git.
