@@ -1,0 +1,48 @@
+import {StatusBar} from 'expo-status-bar';
+import {Stack} from 'expo-router';
+import {ActionSheetProvider} from '@expo/react-native-action-sheet';
+
+export default function RootLayout() {
+  return (
+    <ActionSheetProvider>
+      <>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerTintColor: '#0F766E',
+            headerShadowVisible: false,
+            headerStyle: {backgroundColor: '#F8FAFC'},
+            contentStyle: {backgroundColor: '#F8FAFC'},
+          }}
+        >
+          <Stack.Screen name="index" options={{title: 'Amazon Provider Lab'}} />
+          <Stack.Screen
+            name="provider-acceptance"
+            options={{title: 'Provider Acceptance'}}
+          />
+          <Stack.Screen name="all-products" options={{title: 'All Products'}} />
+          <Stack.Screen
+            name="purchase-flow"
+            options={{title: 'In-App Purchase Flow'}}
+          />
+          <Stack.Screen
+            name="subscription-flow"
+            options={{title: 'Subscription Flow'}}
+          />
+          <Stack.Screen
+            name="available-purchases"
+            options={{title: 'Available Purchases'}}
+          />
+          <Stack.Screen
+            name="offer-code"
+            options={{title: 'Offer Code Redemption'}}
+          />
+          <Stack.Screen
+            name="alternative-billing"
+            options={{title: 'Alternative Billing'}}
+          />
+        </Stack>
+      </>
+    </ActionSheetProvider>
+  );
+}
